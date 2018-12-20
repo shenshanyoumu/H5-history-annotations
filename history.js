@@ -1,5 +1,11 @@
+//  立刻执行函数是前端模块化的基石，通过IIEF方式可以最小程度减少库变量的全局污染
+// 下面整个代码的功能就是为浏览器环境提供history API的支持，在实现过程中会检测浏览器是否原生支持history
+// 如果不支持则经过polyfill方式实现一套，history的实现核心就是检测地址栏URL的变化并触发相关行为，而拦截浏览器默认的页面刷新动作
 (function(factory) {
+  // 基于浏览器运行环境的AMD模块化
   if (typeof define === "function" && define["amd"]) {
+
+    // 如果引入了requireJS库
     if (typeof requirejs !== "undefined") {
       var r = requirejs,
         rndKey = "[history" + new Date().getTime() + "]";
@@ -25,7 +31,7 @@
     return factory();
   }
 })(function() {
-  // global可以表示window对象也可以表示其他运行平台的上下文对象
+  // global可以表示window对象也可以表示其他运行平台的上下文环境
   var global = (typeof window === "object" ? window : this) || {};
 
   // 如果宿主环境不支持history或者history库已经被加载，则直接返回
@@ -33,6 +39,7 @@
     return global.history;
   }
 
+  
   var document = global.document;
   var documentElement = document.documentElement;
   var Object = global["Object"];
@@ -46,10 +53,12 @@
   var historyObject = windowHistory;
 
   // 下面表示符合W3C规范的history API集合
+  // 注意history.pushState动作会增加新的记录条目到session history中
+  // 而history.replaceState动作会替换当前URL下的记录条目的state对象，而不会新增记录
   var historyPushState = windowHistory.pushState;
   var historyReplaceState = windowHistory.replaceState;
 
-  // 检查宿主环境是否支持原生支持history API
+  // 检查宿主环境是否原生支持history API
   var isSupportHistoryAPI = isSupportHistoryAPIDetect();
 
   // W3C规范中history对象具有state属性
@@ -59,6 +68,8 @@
   var locationObject = redefineProperty({}, "t")
     ? {}
     : document.createElement("a");
+
+
   // 事件名称前缀
   var eventNamePrefix = "";
   // 针对不同宿主环境，绑定事件/解绑事件和分发事件的方法是不一样的
@@ -75,36 +86,44 @@
   var addEvent = maybeBindToGlobal(global[addEventListenerName]);
   var removeEvent = maybeBindToGlobal(global[removeEventListenerName]);
   var dispatch = maybeBindToGlobal(global[dispatchEventName]);
-  // default settings
+  
+  
+  // history对象的一些默认设置
   var settings = { basepath: "/", redirect: 0, type: "/", init: 0 };
+
   // sessionStorage在当前会话上下文有效
   var sessionStorageKey = "__historyAPI__";
-  // 用于解析URL函数的a标签
+  
+  // 联想react-route中，Link组件其实就是基于a标签封装；
+  // 浏览器对a标签的URL地址跳转，会触发地址栏URL的修改；然后再进行页面刷新动作
+  // 那么引入history对象后，对地址栏的URL变化事件进行监听，并拦截了浏览器默认的页面刷新动作
   var anchorElement = document.createElement("a");
   
   // 在URL发生变化前的地址
   var lastURL = windowLocation.href;
   var checkUrlForPopState = "";
   var triggerEventsInWindowAttributes = 1;
-  // trigger event 'onpopstate' on page load
+  
+  // 页面加载触发popstate事件
   var isFireInitialState = false;
-  // if used history.location of other code
+ 
+  // 是否使用了history.location标志位
   var isUsedHistoryLocationFlag = 0;
-  // store a list of 'state' objects in the current session
+  
+  // 保存当前session的state记录，在浏览器当前Tab/Window下的所有浏览记录都在session空间下
   var stateStorage = {};
-  // in this object will be stored custom handlers
+
+  // 保存事件处理函数
   var eventsList = {};
-  // stored last title
+  
+  // 保存上一个页面的title属性
   var lastTitle = document.title;
-  // store a custom origin
+  
+  // 保存自定义源
   var customOrigin;
 
-  /**
-   * Properties that will be replaced in the global
-   * object 'window', to prevent conflicts
-   *
-   * @type {Object}
-   */
+  // 定义两个事件，其中URL的哈希变化并不会触发浏览器的页面刷新动作
+  // 而onpopstate事件发生在浏览器针对同一个document对象的历史记录条目发生变化触发，这在SPA应用很常见
   var eventsDescriptors = {
     onhashchange: null,
     onpopstate: null
@@ -125,20 +144,14 @@
     }
   };
 
-  /**
-   * Properties that will be replaced/added to object
-   * 'window.history', includes the object 'history.location',
-   * for a complete the work with the URL address
-   *
-   * @type {Object}
-   */
+// 定义history对象的属性，用于模拟原生的history API
   var historyDescriptors = {
+  
     /**
-     * Setting library initialization
-     *
-     * @param {null|String} [basepath] The base path to the site; defaults to the root "/".
-     * @param {null|String} [type] Substitute the string after the anchor; by default "/".
-     * @param {null|Boolean} [redirect] Enable link translation.
+     * 初始化history库
+     * @param {*} basepath 站点基础路径，默认为“/”
+     * @param {*} type a标签替换路径，默认为"/“
+     * @param {*} redirect 链接的重定向
      */
     setup: function(basepath, type, redirect) {
       settings["basepath"] = (
@@ -148,10 +161,11 @@
       settings["redirect"] =
         redirect == null ? settings["redirect"] : !!redirect;
     },
+   
     /**
-     * @namespace history
-     * @param {String} [type]
-     * @param {String} [basepath]
+     * 
+     * @param {*} type a 标签替换路径，默认为“/”
+     * @param {*} basepath Web站点基础路径，默认为”/”
      */
     redirect: function(type, basepath) {
       historyObject["setup"](basepath, type);
@@ -183,14 +197,12 @@
         }
       }
     },
+  
     /**
-     * The method adds a state object entry
-     * to the history.
-     *
-     * @namespace history
-     * @param {Object} state
-     * @param {string} title
-     * @param {string} [url]
+     * 新增一个state对象记录条目
+     * @param {*} state 当前文档对象的state对象属性
+     * @param {*} title 当前文档对象的title属性
+     * @param {*} url 当前文档对象的URL
      */
     pushState: function(state, title, url) {
       var t = document.title;
@@ -202,15 +214,12 @@
       document.title = t;
       lastTitle = title;
     },
+  
     /**
-     * The method updates the state object,
-     * title, and optionally the URL of the
-     * current entry in the history.
-     *
-     * @namespace history
-     * @param {Object} state
-     * @param {string} title
-     * @param {string} [url]
+     * 在当前会话历史中更新当前活跃记录条目的状态对象、文档title和可选的URL
+     * @param {*} state 当前文档对象的state对象属性
+     * @param {*} title 当前文档对象的title属性
+     * @param {*} url 当前文档对象的URL
      */
     replaceState: function(state, title, url) {
       var t = document.title;
@@ -430,14 +439,7 @@
     // dummy
   }
 
-  /**
-   * Prepares a parts of the current or specified reference for later use in the library
-   *
-   * @param {string} [href]
-   * @param {boolean} [isWindowLocation]
-   * @param {boolean} [isNotAPI]
-   * @return {Object}
-   */
+  // 解析URL字符串
   function parseURL(href, isWindowLocation, isNotAPI) {
     var re = /(?:([a-zA-Z0-9\-]+\:))?(?:\/\/(?:[^@]*@)?([^\/:\?#]+)(?::([0-9]+))?)?([^\?#]*)(?:(\?[^#]+)|\?)?(?:(#.*))?/;
     if (href != null && href !== "" && !isWindowLocation) {
@@ -548,14 +550,13 @@
     return func;
   }
 
-  /**
-   * Initializing storage for the custom state's object
-   */
 
   //  H5支持sessionStorage对象，来保存自定义的state对象
+  // 注意sessionStorage对象只在当前会话过程有效
   function storageInitialize() {
     var sessionStorage;
 
+    // 下面逻辑是判定浏览器是否原生支持sessionStorage特性，如果不支持则使用浏览器的cookie对象模拟
     try {
       sessionStorage = global["sessionStorage"];
       sessionStorage.setItem(sessionStorageKey + "t", "1");
@@ -575,7 +576,7 @@
         },
         setItem: function(key, value) {
           var state = {};
-          // insert one current element to cookie
+         
           if ((state[windowLocation.href] = historyObject.state)) {
             document.cookie = key + "=" + JSON.stringify(state);
           }
@@ -864,7 +865,7 @@
   }
 
   /**
-   * dispatch current state event
+   * popstate事件触发逻辑
    */
   function firePopState() {
     var o = document.createEvent
@@ -876,12 +877,13 @@
       o.type = "popstate";
     }
     o.state = historyObject.state;
-    // send a newly created events to be processed
+   
+    // 触发事件
     dispatchEvent(o);
   }
 
   /**
-   * fire initial state for non-HTML5 browsers
+   * 对于不支持H5浏览器进行文档对象初始化
    */
   function fireInitialState() {
     if (isFireInitialState) {
@@ -891,8 +893,7 @@
   }
 
   /**
-   *改变当前浏览记录的state数据
-   *
+   * 改变当前浏览记录的state数据
    * @param {Object} state history对象保存的state属性
    * @param {string} [url] URL地址
    * @param {Boolean} [replace] 地址替换函数
@@ -965,9 +966,9 @@
   }
 
   /**
-   * The event handler is fully loaded document
+   * 页面加载完毕触发的事件
    *
-   * @param {*} [noScroll]
+   * @param {*} [noScroll] 表示保持滚动位置的逻辑
    * @return void
    */
   function onLoad(noScroll) {
@@ -1052,15 +1053,17 @@
   }
 
   /**
-   * Scroll page to current anchor in url-hash
+   * 将页面滚动到具有HASH锚点的页面位置
    *
-   * @param hash
+   * @param hash URL中的哈希部分
    */
   function scrollToAnchorId(hash) {
     var target = document.getElementById(
       (hash = (hash || "").replace(/^#/, ""))
     );
     if (target && target.id === hash && target.nodeName === "A") {
+
+      // 获得锚点元素相对于document元素左上角的坐标偏移，并调用浏览器原生的scrollTo方法滚动到指定位置
       var rect = target.getBoundingClientRect();
       global.scrollTo(
         documentElement.scrollLeft || 0,
@@ -1071,11 +1074,7 @@
     }
   }
 
-  /**
-   * Library initialization
-   *
-   * @return {Boolean} return true if all is well, otherwise return false value
-   */
+ // 对history库的初始化过程
   function initialize() {
     /**
      * Get custom settings from the query string
@@ -1088,7 +1087,7 @@
     });
 
     /**
-     * hang up the event handler to listen to the events hashchange
+     * 绑定事件监听URL哈希变化事件
      */
     addEvent(eventNamePrefix + "hashchange", onHashChange, false);
 
