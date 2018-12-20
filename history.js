@@ -23,7 +23,6 @@
     // 基于AMD模块化的定义，history不依赖任何模块
     define([], factory);
   }
-
   //  针对CommonJS模块化的history版本，从而支持在Node环境使用
   if (typeof exports === "object" && typeof module !== "undefined") {
     module["exports"] = factory();
